@@ -27,10 +27,18 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERFOEM5MUE2Q0I0MzAzRTkKUldUcEEwUExwcEdNM2tseFNIL3c5dkZ0U1pLSkp0cHRQeENTV2Z5QWhKa0JFNU14Zy9PWmdZcWMK",
+      "requireSignedVersion": true,
+      "endpoints": ["https://github.com/HenryDashwood/writer/releases/latest/download/latest.json"]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["app", "dmg"],
     "icon": ["icons/icon.png", "icons/icon.icns", "icons/icon.ico"],
+    "externalBin": ["resources/writer-mdx"],
     "resources": {
       "resources/sidecar": "sidecar",
       "resources/skills": "skills"

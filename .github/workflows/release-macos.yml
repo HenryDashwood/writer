@@ -1,0 +1,87 @@
+name: Release Writer for macOS
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+concurrency:
+  group: writer-release-${{ github.ref }}
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+
+      - name: Validate release version
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          version=$(bun -p 'require("./src-tauri/tauri.conf.json").version')
+          test "$GITHUB_REF_NAME" = "v$version"
+          test "$(bun -p 'require("./package.json").version')" = "$version"
+          test "$(cargo pkgid --locked --manifest-path src-tauri/Cargo.toml | sed 's/.*@//')" = "$version"
+
+      - name: Install dependencies and test
+        run: |
+          bun install --frozen-lockfile
+          bun run build:resources
+          cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Sign and notarise both distribution formats
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${APPLE_CERTIFICATE:?}" "${APPLE_CERTIFICATE_PASSWORD:?}" "${APPLE_ID:?}" "${APPLE_PASSWORD:?}" "${APPLE_TEAM_ID:?}" "${TAURI_SIGNING_PRIVATE_KEY:?}"
+          bun run tauri:build --bundles app,dmg --config src-tauri/tauri.release.conf.json -- --locked
+
+          bundle=src-tauri/target/release/bundle
+          app="$bundle/macos/Writer.app"
+          dmg="$bundle/dmg/Writer_${GITHUB_REF_NAME#v}_aarch64.dmg"
+          codesign --verify --deep --strict "$app"
+          xcrun stapler validate "$app"
+          syspolicy_check distribution "$app"
+          bash scripts/notarise-dmg.sh "$dmg"
+
+      - name: Stage verified assets in a draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          bundle=src-tauri/target/release/bundle
+          dmg="$bundle/dmg/Writer_${GITHUB_REF_NAME#v}_aarch64.dmg"
+          update="$bundle/macos/Writer.app.tar.gz"
+          signature="$update.sig"
+          test -s "$update" && test -s "$signature"
+
+          jq -n \
+            --arg version "${GITHUB_REF_NAME#v}" \
+            --arg url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/Writer.app.tar.gz" \
+            --rawfile signature "$signature" \
+            '{version: $version, platforms: {"darwin-aarch64": {url: $url, signature: ($signature | rtrimstr("\n"))}}}' \
+            > latest.json
+
+          if draft=$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft); then
+            if [[ "$draft" != true ]]; then
+              echo 'This release is already published.' >&2
+              exit 1
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --draft --generate-notes --title "Writer $GITHUB_REF_NAME"
+          fi
+          gh release upload "$GITHUB_REF_NAME" --clobber "$dmg" "$update" "$signature" latest.json

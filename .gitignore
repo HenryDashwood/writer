@@ -10,6 +10,7 @@
 .env.*
 !.env.example
 secrets.json
+/.release-signing/
 
 # Generated scratch / icon exploration assets
 generated_images/

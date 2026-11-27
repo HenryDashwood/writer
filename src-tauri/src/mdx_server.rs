@@ -51,14 +51,24 @@ impl MdxServerState {
             }
         }
 
-        let bun = find_bun_binary().ok_or_else(|| {
-            "Could not find `bun` on PATH or in ~/.bun/bin. Install Bun to render live MDX components.".to_string()
-        })?;
-        let script = locate_sidecar_script(app)?;
+        let mut command = if cfg!(debug_assertions) {
+            let bun = find_bun_binary().ok_or("Could not find Bun to run the development MDX server")?;
+            let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sidecar/mdx-server.ts");
+            let mut command = Command::new(bun);
+            command.arg("run").arg(script);
+            command
+        } else {
+            let executable = std::env::current_exe()
+                .map_err(|err| format!("Could not locate Writer's executable: {err}"))?;
+            let resources = app.path().resource_dir().map_err(|err| err.to_string())?;
+            let mut command = Command::new(executable.with_file_name("writer-mdx"));
+            command.arg("--resources").arg(resources.join("sidecar"));
+            // Keep hardened runtime enabled without adding executable-memory entitlements.
+            command.env("BUN_JSC_useJIT", "false");
+            command
+        };
 
-        let mut child = Command::new(&bun)
-            .arg("run")
-            .arg(&script)
+        let mut child = command
             .arg("--port")
             .arg("0")
             .env("PATH", augmented_gui_path())
@@ -121,38 +131,6 @@ pub fn find_bun_binary() -> Option<PathBuf> {
     candidates.push(PathBuf::from("/usr/local/bin/bun"));
 
     candidates.into_iter().find(|p| p.is_file())
-}
-
-fn locate_sidecar_script(app: &AppHandle) -> Result<PathBuf, String> {
-    // In dev builds, prefer the live checkout script so edits take effect immediately.
-    if cfg!(debug_assertions) {
-        let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .map(|root| root.join("sidecar/mdx-server.ts"));
-        if let Some(p) = dev_path.filter(|p| p.is_file()) {
-            return Ok(p);
-        }
-    }
-
-    // In packaged `.app` builds, prefer the self-contained bundled sidecar inside Contents/Resources.
-    if let Ok(res_dir) = app.path().resource_dir() {
-        for rel in ["sidecar/mdx-server.mjs", "sidecar/mdx-server.ts"] {
-            let bundled = res_dir.join(rel);
-            if bundled.is_file() {
-                return Ok(bundled);
-            }
-        }
-    }
-
-    // Fallback to checkout path if running an unbundled release binary.
-    let dev_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .map(|root| root.join("sidecar/mdx-server.ts"));
-    if let Some(p) = dev_path.filter(|p| p.is_file()) {
-        return Ok(p);
-    }
-
-    Err("Could not locate bundled or dev MDX sidecar script".to_string())
 }
 
 #[cfg(test)]

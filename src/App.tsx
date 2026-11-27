@@ -4,8 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Code2,
-  Columns2,
-  Eye,
+  Download,
   FilePlus,
   FolderOpen,
   Hexagon,
@@ -13,7 +12,6 @@ import {
   Moon,
   PanelLeft,
   PanelRight,
-  PenLine,
   RefreshCw,
   Save,
   Settings,
@@ -57,7 +55,6 @@ import {
   saveSkill,
   trashEntry,
 } from "./api";
-import { MdxPreviewPane } from "./components/MdxPreviewPane";
 import {
   defaultModelForProvider,
   ReviewDrawer,
@@ -68,6 +65,7 @@ import {
   type SettingsSection,
 } from "./components/SettingsPage";
 import { Sidebar } from "./components/Sidebar";
+import { useWriterUpdates, WriterUpdates } from "./components/WriterUpdates";
 import type { ActiveComment, DiffOverlayState } from "./editor/diffExtension";
 import { getDocumentModeInfo } from "./editor/codeMode";
 import {
@@ -95,7 +93,6 @@ import type {
   SaveSkillInput,
   Skill,
   SkillsCatalog,
-  ViewMode,
 } from "./types";
 
 const WORKSPACE_STORAGE_KEY = "writer:last-workspace";
@@ -263,16 +260,14 @@ export default function App() {
   const [writerGuide, setWriterGuide] = useState<string | null>(null);
   const [writerGuidePath, setWriterGuidePath] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const updates = useWriterUpdates();
   const [externalChange, setExternalChange] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  // MDX live component rendering state
-  const [viewMode, setViewMode] = useState<ViewMode>("write");
+  // MDX live inline component rendering state
   const [sourceMode, setSourceMode] = useState(false);
   const [inlineIslandsEnabled, setInlineIslandsEnabled] = useState(true);
   const [mdxServerUrl, setMdxServerUrl] = useState<string | null>(null);
-  const [mdxServerError, setMdxServerError] = useState<string | null>(null);
-  const [previewRev, setPreviewRev] = useState(0);
   const [islandRev, setIslandRev] = useState(0);
   const bufferSyncTimerRef = useRef<number | null>(null);
 
@@ -357,50 +352,39 @@ export default function App() {
   showAllFilesRef.current = showAllFiles;
   const mdxServerUrlRef = useRef<string | null>(null);
   mdxServerUrlRef.current = mdxServerUrl;
-  const viewModeRef = useRef<ViewMode>("write");
-  viewModeRef.current = viewMode;
 
   const isMdxFile = Boolean(activeFilePath?.toLowerCase().endsWith(".mdx"));
   const isProseFile = !getDocumentModeInfo(activeFilePath).isCode;
 
-  // Lazily start the local Bun MDX sidecar when an `.mdx` file is opened or preview is requested.
+  // Lazily start the local Bun MDX sidecar when an `.mdx` file is opened.
   useEffect(() => {
-    if (!activeFilePath) return;
-    if (!isMdxFile && viewMode === "write") return;
-    if (mdxServerUrl) return;
+    if (!activeFilePath || !isMdxFile || mdxServerUrl) return;
 
     ensureMdxServer()
       .then((info) => {
         setMdxServerUrl(info.base_url);
-        setMdxServerError(null);
       })
-      .catch((err) => {
-        setMdxServerError(String(err));
-      });
-  }, [activeFilePath, isMdxFile, mdxServerUrl, viewMode]);
+      .catch(() => {});
+  }, [activeFilePath, isMdxFile, mdxServerUrl]);
 
-  // Keep the sidecar's live buffer primed when opening a file or once the server boots.
+  // Keep the sidecar's live buffer primed when opening an `.mdx` file or once the server boots.
   useEffect(() => {
-    if (!mdxServerUrl || !activeFilePath || !isProseFile) return;
+    if (!mdxServerUrl || !activeFilePath || !isMdxFile) return;
     const content = editorRef.current?.getContent() ?? "";
     void pushMdxBuffer(mdxServerUrl, activeFilePath, content).then(() => {
-      setPreviewRev((r) => r + 1);
+      setIslandRev((r) => r + 1);
     });
-  }, [mdxServerUrl, activeFilePath, isProseFile]);
+  }, [mdxServerUrl, activeFilePath, isMdxFile]);
 
   const scheduleBufferSync = useCallback((text: string) => {
     const url = mdxServerUrlRef.current;
     const file = activeFileRef.current;
-    if (!url || !file) return;
+    if (!url || !file || !file.toLowerCase().endsWith(".mdx")) return;
     if (bufferSyncTimerRef.current) {
       window.clearTimeout(bufferSyncTimerRef.current);
     }
     bufferSyncTimerRef.current = window.setTimeout(() => {
-      void pushMdxBuffer(url, file, text).then(() => {
-        if (viewModeRef.current !== "write") {
-          setPreviewRev((r) => r + 1);
-        }
-      });
+      void pushMdxBuffer(url, file, text);
     }, 350);
   }, []);
 
@@ -1014,10 +998,10 @@ export default function App() {
       setDirty(false);
       setExternalChange(false);
       flashStatus("Saved", 1500);
-      if (mdxServerUrlRef.current) {
+      if (mdxServerUrlRef.current && activeFilePath.toLowerCase().endsWith(".mdx")) {
         void pushMdxBuffer(mdxServerUrlRef.current, activeFilePath, content).then(
           () => {
-            setPreviewRev((r) => r + 1);
+            setIslandRev((r) => r + 1);
           },
         );
       }
@@ -1447,22 +1431,20 @@ export default function App() {
           </span>
 
           {activeFilePath && isProseFile && (
-            <div className="view-mode-group" role="group" aria-label="View mode">
-              {viewMode !== "preview" && (
-                <button
-                  type="button"
-                  className={`view-mode-btn ${sourceMode ? "is-on" : ""}`}
-                  onClick={() => setSourceMode((v) => !v)}
-                  title={
-                    sourceMode
-                      ? "Code / Source mode ON (click for Live Preview)"
-                      : "Switch to raw Markdown/MDX source mode"
-                  }
-                >
-                  <Code2 size={13} />
-                </button>
-              )}
-              {isMdxFile && viewMode !== "preview" && !sourceMode && (
+            <div className="view-mode-group" role="group" aria-label="Editor view">
+              <button
+                type="button"
+                className={`view-mode-btn ${sourceMode ? "is-on" : ""}`}
+                onClick={() => setSourceMode((v) => !v)}
+                title={
+                  sourceMode
+                    ? "Raw Markdown/MDX source ON (click for Live Preview)"
+                    : "Switch to raw Markdown/MDX source"
+                }
+              >
+                <Code2 size={13} />
+              </button>
+              {isMdxFile && !sourceMode && (
                 <button
                   type="button"
                   className={`view-mode-btn ${inlineIslandsEnabled ? "is-on" : ""}`}
@@ -1476,30 +1458,6 @@ export default function App() {
                   <Hexagon size={13} />
                 </button>
               )}
-              <button
-                type="button"
-                className={`view-mode-btn ${viewMode === "write" ? "is-active" : ""}`}
-                onClick={() => setViewMode("write")}
-                title="Write mode"
-              >
-                <PenLine size={13} />
-              </button>
-              <button
-                type="button"
-                className={`view-mode-btn ${viewMode === "split" ? "is-active" : ""}`}
-                onClick={() => setViewMode("split")}
-                title="Split editor + live MDX preview"
-              >
-                <Columns2 size={13} />
-              </button>
-              <button
-                type="button"
-                className={`view-mode-btn ${viewMode === "preview" ? "is-active" : ""}`}
-                onClick={() => setViewMode("preview")}
-                title="Full MDX preview"
-              >
-                <Eye size={13} />
-              </button>
             </div>
           )}
 
@@ -1522,6 +1480,17 @@ export default function App() {
           >
             {theme === "light" ? <Moon size={15} /> : <Sun size={15} />}
           </button>
+          {(updates.state.status === "available" || updates.state.status === "installed") && (
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => handleOpenSettings("editor")}
+              title={updates.state.status === "available" ? "Writer update available" : "Restart to finish updating"}
+              aria-label="Software updates"
+            >
+              <Download size={15} />
+            </button>
+          )}
           <button
             type="button"
             className={`icon-btn ${settingsOpen ? "is-on" : ""}`}
@@ -1596,6 +1565,7 @@ export default function App() {
           onSaveApiKey={handleSaveApiKey}
           onClearApiKey={handleClearApiKey}
           onOpenFileInEditor={(p) => void handleSelectFile(p)}
+          softwareUpdates={updates.enabled ? <WriterUpdates updates={updates} dirty={dirty} /> : null}
           onClose={() => setSettingsOpen(false)}
         />
       )}
@@ -1650,16 +1620,8 @@ export default function App() {
           />
         )}
 
-        <main
-          className={`center-stage ${isProseFile && viewMode === "split" ? "is-split" : ""}`}
-        >
-          <div
-            className="editor-pane"
-            style={{
-              display:
-                isProseFile && viewMode === "preview" ? "none" : undefined,
-            }}
-          >
+        <main className="center-stage">
+          <div className="editor-pane">
             {cmdKOpen && (
               <form className="cmdk-bar" onSubmit={handleSubmitCmdK}>
                 <div className="cmdk-scope">
@@ -1829,20 +1791,6 @@ export default function App() {
               </div>
             )}
           </div>
-
-          {isProseFile && viewMode !== "write" && (
-            <MdxPreviewPane
-              baseUrl={mdxServerUrl}
-              filePath={activeFilePath}
-              theme={theme}
-              revision={previewRev}
-              error={mdxServerError}
-              onRefresh={() => {
-                setPreviewRev((r) => r + 1);
-                setIslandRev((r) => r + 1);
-              }}
-            />
-          )}
         </main>
 
         {showRight && (
