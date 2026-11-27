@@ -14,11 +14,7 @@
     "tauri:build": "tauri build",
     "tauri:dmg": "tauri build --bundles dmg",
     "release:macos": "bash scripts/release-macos.sh",
-<<<<<<< HEAD
     "install:app": "tauri build --bundles app && touch src-tauri/target/.metadata_never_index && rm -rf /Applications/Writer.app && mv src-tauri/target/release/bundle/macos/Writer.app /Applications/Writer.app"
-=======
-    "install:app": "tauri build --bundles app && rm -rf /Applications/Writer.app && cp -R src-tauri/target/release/bundle/macos/Writer.app /Applications/Writer.app"
->>>>>>> b92d6d5ac290468eb2f0e6bbc40ebaae6333336e
   },
   "dependencies": {
     "@codemirror/commands": "^6.8",

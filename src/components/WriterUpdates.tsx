@@ -1,5 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type UpdateState =
   | { status: "idle" | "checking" | "current" }
@@ -9,14 +9,25 @@ type UpdateState =
 export function useWriterUpdates() {
   const enabled = import.meta.env.PROD && isTauri();
   const [state, setState] = useState<UpdateState>({ status: "idle" });
+  const operation = useRef<"idle" | "checking" | "installing" | "installed">("idle");
+  const reportCheckError = useRef(false);
 
   const check = useCallback(async (showError = true) => {
+    if (operation.current === "checking") {
+      reportCheckError.current ||= showError;
+      return;
+    }
+    if (operation.current !== "idle") return;
+    operation.current = "checking";
+    reportCheckError.current = showError;
     setState({ status: "checking" });
     try {
       const version = await invoke<string | null>("check_for_update");
       setState(version ? { status: "available", version } : { status: "current" });
     } catch (err) {
-      setState(showError ? { status: "error", message: String(err) } : { status: "idle" });
+      setState(reportCheckError.current ? { status: "error", message: String(err) } : { status: "idle" });
+    } finally {
+      operation.current = "idle";
     }
   }, []);
 
@@ -25,11 +36,15 @@ export function useWriterUpdates() {
   }, [enabled, check]);
 
   async function install(version: string) {
+    if (operation.current !== "idle") return;
+    operation.current = "installing";
     setState({ status: "installing", version });
     try {
       await invoke("install_update", { version });
+      operation.current = "installed";
       setState({ status: "installed", version });
     } catch (err) {
+      operation.current = "idle";
       setState({ status: "error", message: String(err) });
     }
   }
@@ -48,7 +63,7 @@ export function WriterUpdates({
   const [restartError, setRestartError] = useState<string>();
 
   return (
-    <div className="settings-card">
+    <div className="settings-card" id="software-updates">
       <div className="settings-card-row">
         <div>
           <div className="settings-label">Software updates</div>

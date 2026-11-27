@@ -37,6 +37,7 @@ export interface SelectionSnapshot {
 
 export interface EditorCanvasHandle {
   setDocument: (content: string, filePath?: string | null) => void;
+  replaceContentSilently: (content: string) => void;
   getContent: () => string;
   getSelection: () => SelectionSnapshot | null;
   setPassResults: (hunks: ResolvedHunk[], comments: ResolvedComment[]) => void;
@@ -113,6 +114,30 @@ function initialProseCursor(content: string): number {
     return Math.min(offset, content.length);
   }
   return 0;
+}
+
+/**
+ * Computes the minimal single-range edit between `prev` and `next` by trimming
+ * their shared prefix and suffix. Patching only the changed slice lets
+ * CodeMirror map cursor/selection cleanly and keep scroll & untouched widgets steady.
+ */
+function computeMinimalChange(prev: string, next: string) {
+  let start = 0;
+  const minLen = Math.min(prev.length, next.length);
+  while (start < minLen && prev.charCodeAt(start) === next.charCodeAt(start)) {
+    start++;
+  }
+  let prevEnd = prev.length;
+  let nextEnd = next.length;
+  while (
+    prevEnd > start &&
+    nextEnd > start &&
+    prev.charCodeAt(prevEnd - 1) === next.charCodeAt(nextEnd - 1)
+  ) {
+    prevEnd--;
+    nextEnd--;
+  }
+  return { from: start, to: prevEnd, insert: next.slice(start, nextEnd) };
 }
 
 export const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(
@@ -267,6 +292,22 @@ export const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(
           selection: { anchor },
         });
         suppressChangeRef.current = false;
+      },
+      replaceContentSilently(content: string) {
+        const view = viewRef.current;
+        if (!view) return;
+        const prev = view.state.doc.toString();
+        if (prev === content) return;
+        const prevScrollTop = view.scrollDOM.scrollTop;
+        const change = computeMinimalChange(prev, content);
+        suppressChangeRef.current = true;
+        view.dispatch({ changes: change });
+        suppressChangeRef.current = false;
+        requestAnimationFrame(() => {
+          if (viewRef.current) {
+            viewRef.current.scrollDOM.scrollTop = prevScrollTop;
+          }
+        });
       },
       getContent() {
         return viewRef.current?.state.doc.toString() ?? "";

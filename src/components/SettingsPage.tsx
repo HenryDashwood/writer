@@ -38,7 +38,8 @@ import type {
 export type SettingsSection = "skills" | "prompts" | "models" | "editor";
 
 interface SettingsPageProps {
-  initialSection?: SettingsSection;
+  section: SettingsSection;
+  onSectionChange: (section: SettingsSection) => void;
   skillsCatalog: SkillsCatalog | null;
   promptConfig: PromptConfig | null;
   apiKeyStatus: ApiKeyStatus | null;
@@ -129,7 +130,8 @@ function formatSecretSource(source: SecretSource | null): string {
 }
 
 export function SettingsPage({
-  initialSection = "skills",
+  section,
+  onSectionChange,
   skillsCatalog,
   promptConfig,
   apiKeyStatus,
@@ -162,17 +164,11 @@ export function SettingsPage({
   softwareUpdates,
   onClose,
 }: SettingsPageProps) {
-  const [section, setSection] = useState<SettingsSection>(initialSection);
   const [pangramKeyInput, setPangramKeyInput] = useState("");
   const [anthropicKeyInput, setAnthropicKeyInput] = useState("");
   const [keyBusy, setKeyBusy] = useState<ApiKeyService | null>(null);
   const [keyFeedback, setKeyFeedback] = useState<string | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
-
-  // Sync if caller re-opens Settings targeted at a specific tab.
-  useEffect(() => {
-    setSection(initialSection);
-  }, [initialSection]);
 
   const skills = skillsCatalog?.skills ?? [];
 
@@ -405,7 +401,7 @@ export function SettingsPage({
           <button
             type="button"
             className={`settings-nav-item ${section === "skills" ? "is-active" : ""}`}
-            onClick={() => setSection("skills")}
+            onClick={() => onSectionChange("skills")}
           >
             <Sparkles size={14} />
             <span>Skills</span>
@@ -415,7 +411,7 @@ export function SettingsPage({
           <button
             type="button"
             className={`settings-nav-item ${section === "prompts" ? "is-active" : ""}`}
-            onClick={() => setSection("prompts")}
+            onClick={() => onSectionChange("prompts")}
           >
             <FileCode2 size={14} />
             <span>System Prompts</span>
@@ -424,7 +420,7 @@ export function SettingsPage({
           <button
             type="button"
             className={`settings-nav-item ${section === "models" ? "is-active" : ""}`}
-            onClick={() => setSection("models")}
+            onClick={() => onSectionChange("models")}
           >
             <Cpu size={14} />
             <span>Models &amp; Keys</span>
@@ -433,7 +429,7 @@ export function SettingsPage({
           <button
             type="button"
             className={`settings-nav-item ${section === "editor" ? "is-active" : ""}`}
-            onClick={() => setSection("editor")}
+            onClick={() => onSectionChange("editor")}
           >
             <SlidersHorizontal size={14} />
             <span>Editor &amp; Theme</span>
@@ -1158,6 +1154,8 @@ export function SettingsPage({
             </div>
 
             <div className="settings-card-stack">
+              {softwareUpdates}
+
               <div className="settings-card">
                 <div className="settings-card-row">
                   <div>
@@ -1221,8 +1219,6 @@ export function SettingsPage({
                   </div>
                 </label>
               </div>
-
-              {softwareUpdates}
 
               <div className="settings-card">
                 <div className="settings-label" style={{ marginBottom: 8 }}>

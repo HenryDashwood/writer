@@ -12,6 +12,11 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, RunEvent, State};
+#[cfg(target_os = "macos")]
+use tauri::{
+    menu::{Menu, MenuItem, MenuItemKind},
+    Emitter,
+};
 use tauri_plugin_updater::UpdaterExt;
 
 use crate::diff::{DiffResolution, ProposedEdit, ResolveOptions};
@@ -26,6 +31,9 @@ use crate::skills::{SaveSkillInput, SaveSkillResult, SkillsCatalog};
 use crate::threads::DocumentThreadsFile;
 use crate::watcher::WatcherState;
 use crate::workspace::{DocumentData, FileNode, MutationResult, SaveResult};
+
+#[cfg(target_os = "macos")]
+const CHECK_FOR_UPDATES: &str = "check-for-updates";
 
 /// Metadata returned to the frontend over Tauri IPC to verify the bridge.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -432,7 +440,31 @@ fn restart_writer(app: AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .menu(|app| {
+            let menu = Menu::default(app)?;
+            // The first submenu on macOS is the application's menu.
+            if let Some(MenuItemKind::Submenu(writer)) = menu.items()?.into_iter().next() {
+                let check = MenuItem::with_id(
+                    app,
+                    CHECK_FOR_UPDATES,
+                    "Check for Updates…",
+                    !tauri::is_dev(),
+                    None::<&str>,
+                )?;
+                writer.insert(&check, 1)?;
+            }
+            Ok(menu)
+        })
+        .on_menu_event(|app, event| {
+            if event.id() == CHECK_FOR_UPDATES {
+                let _ = app.emit_to("main", CHECK_FOR_UPDATES, ());
+            }
+        });
+
+    let app = builder
         .manage(WatcherState::default())
         .manage(MdxServerState::default())
         .plugin(tauri_plugin_dialog::init())

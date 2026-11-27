@@ -329,3 +329,7 @@ export function onWorkspaceTreeChanged(
     handler();
   });
 }
+
+export function onCheckForUpdates(handler: () => void): Promise<UnlistenFn> {
+  return listen("check-for-updates", handler);
+}

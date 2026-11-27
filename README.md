@@ -61,7 +61,7 @@ For GitHub Actions, set these repository secrets in **Settings → Secrets and v
 
 Keep a backup of the updater private key. Installed copies verify updates with the matching public key. For a new version, bump `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and refresh `src-tauri/Cargo.lock`. Push the matching `vX.Y.Z` tag. The workflow verifies the installer and stages it, the signed updater archive and `latest.json` in a GitHub draft release. Publish the draft as the latest release to make the update available in Writer.
 
-Writer checks for updates on launch and under **Settings → Editor & Theme → Software updates**. You choose when to install and restart.
+Writer checks for updates on launch. Check manually from **Writer → Check for Updates…** or **Settings → Editor & Theme → Software updates**. You choose when to install and restart.
 
 ## API Keys & Secrets
 

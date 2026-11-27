@@ -4,13 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Code2,
-<<<<<<< HEAD
   Download,
-=======
-  Columns2,
-  Download,
-  Eye,
->>>>>>> b92d6d5ac290468eb2f0e6bbc40ebaae6333336e
   FilePlus,
   FolderOpen,
   Hexagon,
@@ -40,6 +34,7 @@ import {
   listSkills,
   loadDocumentThreads,
   moveEntry,
+  onCheckForUpdates,
   onWorkspaceFileChanged,
   onWorkspaceTreeChanged,
   openWithDefaultApp,
@@ -267,7 +262,10 @@ export default function App() {
   const [writerGuidePath, setWriterGuidePath] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const updates = useWriterUpdates();
-  const [externalChange, setExternalChange] = useState(false);
+  const { enabled: updatesEnabled, check: checkForUpdates } = updates;
+  const [externalChange, setExternalChange] = useState<
+    null | "modified" | "deleted"
+  >(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   // MDX live inline component rendering state
@@ -358,6 +356,13 @@ export default function App() {
   showAllFilesRef.current = showAllFiles;
   const mdxServerUrlRef = useRef<string | null>(null);
   mdxServerUrlRef.current = mdxServerUrl;
+  const dirtyRef = useRef<boolean>(false);
+  dirtyRef.current = dirty;
+  const diffHunkCountRef = useRef<number>(0);
+  diffHunkCountRef.current = diffState.hunks.length;
+  const savingRef = useRef<boolean>(false);
+  const lastExternalDiskContentRef = useRef<string | null>(null);
+  const dismissedExternalContentRef = useRef<string | null>(null);
 
   const isMdxFile = Boolean(activeFilePath?.toLowerCase().endsWith(".mdx"));
   const isProseFile = !getDocumentModeInfo(activeFilePath).isCode;
@@ -619,6 +624,18 @@ export default function App() {
     setSettingsOpen(true);
   }, []);
 
+  useEffect(() => {
+    if (!updatesEnabled) return;
+    const listener = onCheckForUpdates(() => {
+      handleOpenSettings("editor");
+      document.getElementById("software-updates")?.scrollIntoView({ block: "nearest" });
+      void checkForUpdates();
+    }).catch(() => undefined);
+    return () => {
+      void listener.then((unlisten) => unlisten?.());
+    };
+  }, [updatesEnabled, checkForUpdates, handleOpenSettings]);
+
   const handleSaveSkill = useCallback(async (input: SaveSkillInput) => {
     const res = await saveSkill(workspacePathRef.current, input);
     setSkillsCatalog(res.catalog);
@@ -740,14 +757,78 @@ export default function App() {
     });
   }, [loadWorkspace]);
 
+  const reconcileDiskChange = useCallback(async () => {
+    const targetPath = activeFileRef.current;
+    if (!targetPath || savingRef.current) return;
+
+    try {
+      const doc = await readDocument(targetPath, workspacePathRef.current);
+      if (activeFileRef.current !== targetPath || savingRef.current) return;
+
+      const currentBuffer = editorRef.current?.getContent() ?? "";
+      if (doc.content === currentBuffer) {
+        // Disk bytes match our live buffer — ignore FSEvents/metadata noise.
+        lastExternalDiskContentRef.current = null;
+        dismissedExternalContentRef.current = null;
+        setExternalChange(null);
+        return;
+      }
+
+      if (!dirtyRef.current && diffHunkCountRef.current === 0) {
+        // Buffer is clean and has no active AI review hunks: silently auto-reload in place.
+        editorRef.current?.replaceContentSilently(doc.content);
+        setOutline(doc.outline);
+        setPageMetadata(doc.metadata);
+        setWordCount(doc.word_count);
+        setWriterGuide(doc.writer_guide);
+        setWriterGuidePath(doc.writer_guide_path);
+        lastExternalDiskContentRef.current = null;
+        dismissedExternalContentRef.current = null;
+        setExternalChange(null);
+        flashStatus("Updated from disk", 2000);
+
+        if (
+          mdxServerUrlRef.current &&
+          targetPath.toLowerCase().endsWith(".mdx")
+        ) {
+          void pushMdxBuffer(
+            mdxServerUrlRef.current,
+            targetPath,
+            doc.content,
+          ).then(() => {
+            setIslandRev((r) => r + 1);
+          });
+        }
+      } else {
+        // Genuine conflict with unsaved edits or active AI diff hunks.
+        lastExternalDiskContentRef.current = doc.content;
+        if (dismissedExternalContentRef.current !== doc.content) {
+          setExternalChange("modified");
+        }
+      }
+    } catch {
+      if (activeFileRef.current !== targetPath || savingRef.current) return;
+      setDirty(true);
+      setExternalChange("deleted");
+    }
+  }, [flashStatus]);
+
   useEffect(() => {
     let unlistenFile: (() => void) | null = null;
     let unlistenTree: (() => void) | null = null;
+    let fileCheckTimer: number | null = null;
     let refreshTimer: number | null = null;
+
+    const scheduleReconcile = () => {
+      if (fileCheckTimer) window.clearTimeout(fileCheckTimer);
+      fileCheckTimer = window.setTimeout(() => {
+        void reconcileDiskChange();
+      }, 180);
+    };
 
     onWorkspaceFileChanged((event) => {
       if (activeFileRef.current && event.path === activeFileRef.current) {
-        setExternalChange(true);
+        scheduleReconcile();
       }
     })
       .then((fn) => {
@@ -766,12 +847,21 @@ export default function App() {
       })
       .catch(() => {});
 
+    const onWindowFocus = () => {
+      if (activeFileRef.current) {
+        void reconcileDiskChange();
+      }
+    };
+    window.addEventListener("focus", onWindowFocus);
+
     return () => {
       unlistenFile?.();
       unlistenTree?.();
+      window.removeEventListener("focus", onWindowFocus);
+      if (fileCheckTimer) window.clearTimeout(fileCheckTimer);
       if (refreshTimer) window.clearTimeout(refreshTimer);
     };
-  }, [handleRefreshWorkspace]);
+  }, [handleRefreshWorkspace, reconcileDiskChange]);
 
   const handleOpenFolder = useCallback(async () => {
     try {
@@ -796,7 +886,9 @@ export default function App() {
         setWriterGuide(doc.writer_guide);
         setWriterGuidePath(doc.writer_guide_path);
         setDirty(false);
-        setExternalChange(false);
+        setExternalChange(null);
+        lastExternalDiskContentRef.current = null;
+        dismissedExternalContentRef.current = null;
         setRejectedEdits([]);
         setPassError(null);
         setActiveSelection(null);
@@ -995,6 +1087,7 @@ export default function App() {
 
   const handleSave = useCallback(async () => {
     if (!activeFilePath || !editorRef.current) return;
+    savingRef.current = true;
     try {
       const content = editorRef.current.getContent();
       const result = await saveDocument(activeFilePath, content);
@@ -1002,7 +1095,9 @@ export default function App() {
       setPageMetadata(result.metadata);
       setWordCount(result.word_count);
       setDirty(false);
-      setExternalChange(false);
+      setExternalChange(null);
+      lastExternalDiskContentRef.current = null;
+      dismissedExternalContentRef.current = null;
       flashStatus("Saved", 1500);
       if (mdxServerUrlRef.current && activeFilePath.toLowerCase().endsWith(".mdx")) {
         void pushMdxBuffer(mdxServerUrlRef.current, activeFilePath, content).then(
@@ -1013,6 +1108,8 @@ export default function App() {
       }
     } catch (err) {
       setStatusMessage(`Save failed: ${String(err)}`);
+    } finally {
+      savingRef.current = false;
     }
   }, [activeFilePath, flashStatus]);
 
@@ -1516,9 +1613,13 @@ export default function App() {
         </div>
       </header>
 
-      {externalChange && (
+      {externalChange === "modified" && (
         <div className="external-banner">
-          <span>This file was modified on disk outside Writer.</span>
+          <span>
+            {dirty
+              ? "This file changed on disk while you have unsaved edits."
+              : "This file changed on disk while you have pending review edits."}
+          </span>
           <button
             type="button"
             className="small-btn"
@@ -1529,16 +1630,42 @@ export default function App() {
           <button
             type="button"
             className="link-btn"
-            onClick={() => setExternalChange(false)}
+            onClick={() => {
+              dismissedExternalContentRef.current =
+                lastExternalDiskContentRef.current;
+              setDirty(true);
+              setExternalChange(null);
+            }}
           >
             Keep my buffer
           </button>
         </div>
       )}
 
+      {externalChange === "deleted" && (
+        <div className="external-banner">
+          <span>This file was moved or deleted on disk.</span>
+          <button
+            type="button"
+            className="small-btn"
+            onClick={() => void handleSave()}
+          >
+            <Save size={12} /> Save to recreate
+          </button>
+          <button
+            type="button"
+            className="link-btn"
+            onClick={() => setExternalChange(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {settingsOpen && (
         <SettingsPage
-          initialSection={settingsSection}
+          section={settingsSection}
+          onSectionChange={setSettingsSection}
           skillsCatalog={skillsCatalog}
           promptConfig={promptConfig}
           apiKeyStatus={apiKeyStatus}
