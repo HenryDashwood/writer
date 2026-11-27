@@ -528,7 +528,7 @@ mod tests {
     fn app_info_populates_package_metadata() {
         let info = build_app_info();
         assert_eq!(info.name, "writer");
-        assert_eq!(info.version, "0.1.0");
+        assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
         assert!(!info.platform.is_empty());
     }
 }
