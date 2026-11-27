@@ -1,0 +1,25 @@
+# macOS & editor noise
+.DS_Store
+*.swp
+*.log
+.vscode/
+.idea/
+
+# Secrets & local environment
+.env
+.env.*
+!.env.example
+secrets.json
+
+# Generated scratch / icon exploration assets
+generated_images/
+
+# Dependencies & build outputs
+node_modules/
+dist/
+*.tsbuildinfo
+src-tauri/target/
+src-tauri/resources/
+src-tauri/gen/schemas/
+*.dmg
+*.app
