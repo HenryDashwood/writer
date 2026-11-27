@@ -1,6 +1,6 @@
 [package]
 name = "writer"
-version = "0.1.0"
+version = "0.1.1"
 description = "Surgical AI-assisted writing and editing environment for Markdown and MDX"
 edition = "2021"
 default-run = "Writer"
