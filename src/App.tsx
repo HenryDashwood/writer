@@ -4,7 +4,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Code2,
+<<<<<<< HEAD
   Download,
+=======
+  Columns2,
+  Download,
+  Eye,
+>>>>>>> b92d6d5ac290468eb2f0e6bbc40ebaae6333336e
   FilePlus,
   FolderOpen,
   Hexagon,
