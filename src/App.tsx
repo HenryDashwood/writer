@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Code2,
   Columns2,
+  Download,
   Eye,
   FilePlus,
   FolderOpen,
@@ -68,6 +69,7 @@ import {
   type SettingsSection,
 } from "./components/SettingsPage";
 import { Sidebar } from "./components/Sidebar";
+import { useWriterUpdates, WriterUpdates } from "./components/WriterUpdates";
 import type { ActiveComment, DiffOverlayState } from "./editor/diffExtension";
 import { getDocumentModeInfo } from "./editor/codeMode";
 import {
@@ -263,6 +265,7 @@ export default function App() {
   const [writerGuide, setWriterGuide] = useState<string | null>(null);
   const [writerGuidePath, setWriterGuidePath] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const updates = useWriterUpdates();
   const [externalChange, setExternalChange] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -1522,6 +1525,17 @@ export default function App() {
           >
             {theme === "light" ? <Moon size={15} /> : <Sun size={15} />}
           </button>
+          {(updates.state.status === "available" || updates.state.status === "installed") && (
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => handleOpenSettings("editor")}
+              title={updates.state.status === "available" ? "Writer update available" : "Restart to finish updating"}
+              aria-label="Software updates"
+            >
+              <Download size={15} />
+            </button>
+          )}
           <button
             type="button"
             className={`icon-btn ${settingsOpen ? "is-on" : ""}`}
@@ -1596,6 +1610,7 @@ export default function App() {
           onSaveApiKey={handleSaveApiKey}
           onClearApiKey={handleClearApiKey}
           onOpenFileInEditor={(p) => void handleSelectFile(p)}
+          softwareUpdates={updates.enabled ? <WriterUpdates updates={updates} dirty={dirty} /> : null}
           onClose={() => setSettingsOpen(false)}
         />
       )}

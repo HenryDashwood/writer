@@ -12,6 +12,7 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, RunEvent, State};
+use tauri_plugin_updater::UpdaterExt;
 
 use crate::diff::{DiffResolution, ProposedEdit, ResolveOptions};
 use crate::llm::{
@@ -401,12 +402,41 @@ fn ensure_mdx_server(
     mdx_server.ensure_running(&app)
 }
 
+#[tauri::command]
+async fn check_for_update(app: AppHandle) -> Result<Option<String>, String> {
+    let updater = app.updater().map_err(|err| err.to_string())?;
+    updater
+        .check()
+        .await
+        .map(|update| update.map(|update| update.version))
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn install_update(app: AppHandle, version: String) -> Result<(), String> {
+    let updater = app.updater().map_err(|err| err.to_string())?;
+    let update = updater.check().await.map_err(|err| err.to_string())?;
+    let update = update
+        .filter(|update| update.version == version)
+        .ok_or("The available update changed. Check for updates again.")?;
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn restart_writer(app: AppHandle) {
+    app.request_restart();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
         .manage(WatcherState::default())
         .manage(MdxServerState::default())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             get_app_info,
             scan_mdx_spans,
@@ -442,6 +472,9 @@ pub fn run() {
             run_edit_pass,
             run_chat_turn,
             ensure_mdx_server,
+            check_for_update,
+            install_update,
+            restart_writer,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Writer");

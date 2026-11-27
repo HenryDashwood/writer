@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   Check,
@@ -68,6 +68,7 @@ interface SettingsPageProps {
   onSaveApiKey: (service: ApiKeyService, key: string) => Promise<void>;
   onClearApiKey: (service: ApiKeyService) => Promise<void>;
   onOpenFileInEditor: (path: string) => void;
+  softwareUpdates: ReactNode;
   onClose: () => void;
 }
 
@@ -158,6 +159,7 @@ export function SettingsPage({
   onSaveApiKey,
   onClearApiKey,
   onOpenFileInEditor,
+  softwareUpdates,
   onClose,
 }: SettingsPageProps) {
   const [section, setSection] = useState<SettingsSection>(initialSection);
@@ -1219,6 +1221,8 @@ export function SettingsPage({
                   </div>
                 </label>
               </div>
+
+              {softwareUpdates}
 
               <div className="settings-card">
                 <div className="settings-label" style={{ marginBottom: 8 }}>

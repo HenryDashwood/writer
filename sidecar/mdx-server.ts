@@ -7,8 +7,12 @@ import rehypeSlug from "rehype-slug";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 
-const WRITER_ROOT = path.resolve(import.meta.dir, "..");
-const WRITER_NODE_MODULES = path.join(WRITER_ROOT, "node_modules");
+const resourceArg = Bun.argv.indexOf("--resources");
+const bundledResources = resourceArg >= 0 ? Bun.argv[resourceArg + 1] : undefined;
+const RESOURCE_DIR = bundledResources ?? import.meta.dir;
+const WRITER_NODE_MODULES = bundledResources
+  ? path.join(bundledResources, "node_modules")
+  : path.resolve(RESOURCE_DIR, "../node_modules");
 
 interface ProjectInfo {
   root: string | null;
@@ -559,7 +563,7 @@ setTimeout(reportHeight, 600);
  */
 async function getStylesheet(project: ProjectInfo): Promise<string> {
   const katexCssCandidates = [
-    path.join(import.meta.dir, "katex/katex.min.css"),
+    path.join(RESOURCE_DIR, "katex/katex.min.css"),
     ...project.nodeModulesDirs.map((nm) =>
       path.join(nm, "katex/dist/katex.min.css"),
     ),
@@ -941,7 +945,7 @@ const server = Bun.serve({
     if (url.pathname.startsWith("/fonts/")) {
       const fontName = path.basename(url.pathname);
       const fontCandidates = [
-        path.join(import.meta.dir, "katex/fonts", fontName),
+        path.join(RESOURCE_DIR, "katex/fonts", fontName),
         path.join(WRITER_NODE_MODULES, "katex/dist/fonts", fontName),
       ];
       const fontPath = fontCandidates.find((p) => fs.existsSync(p));

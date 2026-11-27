@@ -13,6 +13,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:dmg": "tauri build --bundles dmg",
+    "release:macos": "bash scripts/release-macos.sh",
     "install:app": "tauri build --bundles app && rm -rf /Applications/Writer.app && cp -R src-tauri/target/release/bundle/macos/Writer.app /Applications/Writer.app"
   },
   "dependencies": {

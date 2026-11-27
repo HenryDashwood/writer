@@ -13,20 +13,28 @@ fs.rmSync(RES_DIR, { recursive: true, force: true });
 fs.mkdirSync(KATEX_FONTS_OUT_DIR, { recursive: true });
 fs.mkdirSync(SKILLS_OUT_DIR, { recursive: true });
 
-// 1. Bundle the MDX sidecar into a single standalone JS file for Bun.
-const buildRes = await Bun.build({
-  entrypoints: [path.join(ROOT, "sidecar", "mdx-server.ts")],
-  outdir: SIDECAR_OUT_DIR,
-  naming: "mdx-server.mjs",
-  target: "bun",
-  minify: false,
-});
+// Tauri signs this executable as part of the app bundle.
+const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
+const sidecar = Bun.spawnSync([
+  process.execPath,
+  "build",
+  "--compile",
+  "--no-compile-autoload-dotenv",
+  "--no-compile-autoload-bunfig",
+  "--outfile",
+  path.join(RES_DIR, `writer-mdx-${arch}-apple-darwin`),
+  path.join(ROOT, "sidecar", "mdx-server.ts"),
+], { stdout: "inherit", stderr: "inherit" });
+if (sidecar.exitCode !== 0) process.exit(1);
 
-if (!buildRes.success) {
-  for (const log of buildRes.logs) {
-    console.error(log);
-  }
-  process.exit(1);
+// The browser bundler resolves React from the previewed project when available.
+// Include a fallback for MDX files outside projects with installed dependencies.
+for (const pkg of ["react", "react-dom", "scheduler"]) {
+  fs.cpSync(
+    path.join(ROOT, "node_modules", pkg),
+    path.join(SIDECAR_OUT_DIR, "node_modules", pkg),
+    { recursive: true, dereference: true },
+  );
 }
 
 // 2. Copy KaTeX CSS + woff2 fonts for standalone math rendering in preview/islands.
